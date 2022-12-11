@@ -6,7 +6,7 @@ import argparse
 
 import cv2
 
-from sahi.model import YoloxOnnxDetectionModel
+from sahi.models.yolox_onnx import YoloxOnnxDetectionModel
 from sahi.predict import get_sliced_prediction
 
 
@@ -99,6 +99,7 @@ def main():
             slice_width=slice_width,
             overlap_height_ratio=overlap_height_ratio,
             overlap_width_ratio=overlap_width_ratio,
+            verbose=0,
         )
 
         bboxes = []

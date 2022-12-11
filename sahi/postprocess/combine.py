@@ -8,6 +8,7 @@ import torch
 
 from sahi.postprocess.utils import ObjectPredictionList, has_match, merge_object_prediction_pair
 from sahi.prediction import ObjectPrediction
+from sahi.utils.import_utils import check_requirements
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +26,7 @@ def batched_nms(predictions: torch.tensor, match_metric: str = "IOU", match_thre
     Returns:
         A list of filtered indexes, Shape: [ ,]
     """
+
     scores = predictions[:, 4].squeeze()
     category_ids = predictions[:, 5].squeeze()
     keep_mask = torch.zeros_like(category_ids, dtype=torch.bool)
@@ -55,6 +57,7 @@ def nms(
     Returns:
         A list of filtered indexes, Shape: [ ,]
     """
+
     # we extract coordinates for every
     # prediction box present in P
     x1 = predictions[:, 0]
@@ -232,6 +235,7 @@ def greedy_nmm(
 
         # sanity check
         if len(order) == 0:
+            keep_to_merge_list[idx.tolist()] = []
             break
 
         # select coordinates of BBoxes according to
@@ -427,7 +431,6 @@ def nmm(
         # keep the boxes with IoU/IoS less than thresh_iou
         mask = match_metric_value < match_threshold
         matched_box_indices = other_pred_inds[(mask == False).nonzero().flatten()].flip(dims=(0,))
-        unmatched_indices = other_pred_inds[(mask == True).nonzero().flatten()]
 
         # create keep_ind to merge_ind_list mapping
         if pred_ind not in merge_to_keep:
@@ -461,8 +464,10 @@ class PostprocessPredictions:
         self.class_agnostic = class_agnostic
         self.match_metric = match_metric
 
+        check_requirements(["torch"])
+
     def __call__(self):
-        NotImplementedError()
+        raise NotImplementedError()
 
 
 class NMSPostprocess(PostprocessPredictions):

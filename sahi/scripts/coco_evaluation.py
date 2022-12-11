@@ -111,11 +111,8 @@ def evaluate_core(
         if not isinstance(metric_items, list):
             metric_items = [metric_items]
     if areas is not None:
-        assert (
-            len(areas) == 3
-        ), "3 integers should be specified as areas, \
-            representing 3 area regions"
-
+        if len(areas) != 3:
+            raise ValueError("3 integers should be specified as areas, representing 3 area regions")
     eval_results = OrderedDict()
     cocoGt = COCO(dataset_path)
     cat_ids = list(cocoGt.cats.keys())
@@ -128,22 +125,6 @@ def evaluate_core(
         with open(result_path) as json_file:
             results = json.load(json_file)
         try:
-            if iou_type == "segm":
-                # Refer to https://github.com/cocodataset/cocoapi/blob/master/PythonAPI/pycocotools/coco.py#L331  # noqa
-                # When evaluating mask AP, if the results contain bbox,
-                # cocoapi will use the box area instead of the mask area
-                # for calculating the instance area. Though the overall AP
-                # is not affected, this leads to different
-                # small/medium/large mask AP results.
-                for x in results:
-                    x.pop("bbox")
-                warnings.simplefilter("once")
-                warnings.warn(
-                    'The key "bbox" is deleted for more accurate mask AP '
-                    "of small/medium/large instances since v2.12.0. This "
-                    "does not change the overall mAP calculation.",
-                    UserWarning,
-                )
             cocoDt = cocoGt.loadRes(results)
         except IndexError:
             print("The testing results of the whole dataset is empty.")
@@ -206,8 +187,10 @@ def evaluate_core(
             # from https://github.com/facebookresearch/detectron2/
             precisions = cocoEval.eval["precision"]
             # precision: (iou, recall, cls, area range, max dets)
-            assert len(cat_ids) == precisions.shape[2]
-
+            if len(cat_ids) != precisions.shape[2]:
+                raise ValueError(
+                    f"The number of categories {len(cat_ids)} is not equal to the number of precisions {precisions.shape[2]}"
+                )
             max_cat_name_len = 0
             for idx, catId in enumerate(cat_ids):
                 nm = cocoGt.loadCats(catId)[0]

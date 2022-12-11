@@ -9,7 +9,6 @@ import pickle
 import re
 import urllib.request
 import zipfile
-from os import path
 from pathlib import Path
 
 import numpy as np
@@ -56,14 +55,16 @@ class NumpyEncoder(json.JSONEncoder):
             return super(NumpyEncoder, self).default(obj)
 
 
-def load_json(load_path):
+def load_json(load_path: str, encoding: str = "utf-8"):
     """
     Loads json formatted data (given as "data") from load_path
+    Encoding type can be specified with 'encoding' argument
+
     Example inputs:
         load_path: "dirname/coco.json"
     """
     # read from path
-    with open(load_path) as json_file:
+    with open(load_path, encoding=encoding) as json_file:
         data = json.load(json_file)
     return data
 
@@ -96,7 +97,7 @@ def list_files(
 
     for file in os.listdir(directory):
         # check if filename contains any of the terms given in contains list
-        if any(strtocheck in file for strtocheck in contains):
+        if any(strtocheck in file.lower() for strtocheck in contains):
             filepath = os.path.join(directory, file)
             filepath_list.append(filepath)
 
@@ -139,7 +140,7 @@ def list_files_recursively(directory: str, contains: list = [".json"], verbose: 
     for r, _, f in os.walk(directory):
         for file in f:
             # check if filename contains any of the terms given in contains list
-            if any(strtocheck in file for strtocheck in contains):
+            if any(strtocheck in file.lower() for strtocheck in contains):
                 abs_filepath = os.path.join(r, file)
                 abs_filepath_list.append(abs_filepath)
                 relative_filepath = abs_filepath.split(directory)[-1]
@@ -194,18 +195,20 @@ def save_pickle(data, save_path):
         pickle.dump(data, outfile)
 
 
-def import_class(model_name):
+def import_model_class(model_type, class_name):
     """
     Imports a predefined detection class by class name.
 
     Args:
+        model_type: str
+            "yolov5", "detectron2", "mmdet", "huggingface" etc
         model_name: str
             Name of the detection model class (example: "MmdetDetectionModel")
     Returns:
         class_: class with given path
     """
-    module = __import__("sahi.model", fromlist=[model_name])
-    class_ = getattr(module, model_name)
+    module = __import__(f"sahi.models.{model_type}", fromlist=[class_name])
+    class_ = getattr(module, class_name)
     return class_
 
 
@@ -226,7 +229,7 @@ def download_from_url(from_url: str, to_path: str):
 
     Path(to_path).parent.mkdir(parents=True, exist_ok=True)
 
-    if not path.exists(to_path):
+    if not os.path.exists(to_path):
         urllib.request.urlretrieve(
             from_url,
             to_path,

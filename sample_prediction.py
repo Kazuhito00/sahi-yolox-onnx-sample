@@ -6,7 +6,7 @@ import argparse
 
 import cv2
 
-from sahi.model import YoloxOnnxDetectionModel
+from sahi.models.yolox_onnx import YoloxOnnxDetectionModel
 from sahi.predict import get_prediction
 
 

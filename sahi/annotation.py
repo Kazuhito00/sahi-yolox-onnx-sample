@@ -14,16 +14,23 @@ from sahi.utils.cv import (
 )
 from sahi.utils.shapely import ShapelyAnnotation
 
+try:
+    from pycocotools import mask as mask_utils
+
+    use_rle = True
+except ImportError:
+    use_rle = False
+
 
 class BoundingBox:
     """
     Bounding box of the annotation.
     """
 
-    def __init__(self, box: List[int], shift_amount: List[int] = [0, 0]):
+    def __init__(self, box: List[float], shift_amount: List[int] = [0, 0]):
         """
         Args:
-            box: List[int]
+            box: List[float]
                 [minx, miny, maxx, maxy]
             shift_amount: List[int]
                 To shift the box and mask predictions from sliced image
@@ -31,10 +38,10 @@ class BoundingBox:
         """
         if box[0] < 0 or box[1] < 0 or box[2] < 0 or box[3] < 0:
             raise Exception("Box coords [minx, miny, maxx, maxy] cannot be negative")
-        self.minx = int(box[0])
-        self.miny = int(box[1])
-        self.maxx = int(box[2])
-        self.maxy = int(box[3])
+        self.minx = box[0]
+        self.miny = box[1]
+        self.maxx = box[2]
+        self.maxy = box[3]
 
         self.shift_x = shift_amount[0]
         self.shift_y = shift_amount[1]
@@ -45,6 +52,10 @@ class BoundingBox:
         Returns the shift amount of the bbox slice as [shift_x, shift_y]
         """
         return [self.shift_x, self.shift_y]
+
+    @property
+    def area(self):
+        return (self.maxx - self.minx) * (self.maxy - self.miny)
 
     def get_expanded_box(self, ratio=0.1, max_x=None, max_y=None):
         w = self.maxx - self.minx
@@ -58,17 +69,29 @@ class BoundingBox:
         box = [minx, miny, maxx, maxy]
         return BoundingBox(box)
 
-    def to_coco_bbox(self):
+    def to_xywh(self):
         """
         Returns: [xmin, ymin, width, height]
         """
         return [self.minx, self.miny, self.maxx - self.minx, self.maxy - self.miny]
 
-    def to_voc_bbox(self):
+    def to_coco_bbox(self):
+        """
+        Returns: [xmin, ymin, width, height]
+        """
+        return self.to_xywh()
+
+    def to_xyxy(self):
         """
         Returns: [xmin, ymin, xmax, ymax]
         """
         return [self.minx, self.miny, self.maxx, self.maxy]
+
+    def to_voc_bbox(self):
+        """
+        Returns: [xmin, ymin, xmax, ymax]
+        """
+        return self.to_xyxy()
 
     def get_shifted_box(self):
         """
@@ -99,8 +122,10 @@ class Category:
             name: str
                 Name of the object category
         """
-        assert isinstance(id, int), "id should be integer"
-        assert isinstance(name, str), "name should be string"
+        if not isinstance(id, int):
+            raise TypeError("id should be integer")
+        if not isinstance(name, str):
+            raise TypeError("name should be string")
         self.id = id
         self.name = name
 
@@ -160,8 +185,8 @@ class Mask:
                 sized image, should be in the form of [shift_x, shift_y]
         """
         # confirm full_shape is given
-        assert full_shape is not None, "full_shape must be provided"
-
+        if full_shape is None:
+            raise ValueError("full_shape must be provided")
         bool_mask = get_bool_mask_from_coco_segmentation(segmentation, height=full_shape[0], width=full_shape[1])
         return cls(
             bool_mask=bool_mask,
@@ -192,9 +217,9 @@ class Mask:
             has_bool_mask = False
 
         if has_bool_mask:
-            self.bool_mask = bool_mask.astype(bool)
+            self._mask = self.encode_bool_mask(bool_mask)
         else:
-            self.bool_mask = None
+            self._mask = None
 
         self.shift_x = shift_amount[0]
         self.shift_y = shift_amount[1]
@@ -208,6 +233,22 @@ class Mask:
         else:
             self.full_shape_height = None
             self.full_shape_width = None
+
+    def encode_bool_mask(self, bool_mask):
+        _mask = bool_mask
+        if use_rle:
+            _mask = mask_utils.encode(np.asfortranarray(bool_mask.astype(np.uint8)))
+        return _mask
+
+    def decode_bool_mask(self, bool_mask):
+        _mask = bool_mask
+        if use_rle:
+            _mask = mask_utils.decode(bool_mask).astype(bool)
+        return _mask
+
+    @property
+    def bool_mask(self):
+        return self.decode_bool_mask(self._mask)
 
     @property
     def shape(self):
@@ -232,7 +273,8 @@ class Mask:
 
     def get_shifted_mask(self):
         # Confirm full_shape is specified
-        assert (self.full_shape_height is not None) and (self.full_shape_width is not None), "full_shape is None"
+        if (self.full_shape_height is None) or (self.full_shape_width is None):
+            raise ValueError("full_shape is None")
         # init full mask
         mask_fullsized = np.full(
             (
@@ -540,6 +582,10 @@ class ObjectAnnotation:
         else:
             self.mask = None
 
+        # if bbox is a numpy object, convert it to python List[float]
+        if type(bbox).__module__ == "numpy":
+            bbox = copy.deepcopy(bbox).tolist()
+
         # make sure bbox coords lie inside [0, image_size]
         xmin = max(bbox[0], 0)
         ymin = max(bbox[1], 0)
@@ -573,7 +619,7 @@ class ObjectAnnotation:
             )
         else:
             coco_annotation = CocoAnnotation.from_coco_bbox(
-                bbox=self.bbox.to_coco_bbox(),
+                bbox=self.bbox.to_xywh(),
                 category_id=self.category.id,
                 category_name=self.category.name,
             )
@@ -592,7 +638,7 @@ class ObjectAnnotation:
             )
         else:
             coco_prediction = CocoPrediction.from_coco_bbox(
-                bbox=self.bbox.to_coco_bbox(),
+                bbox=self.bbox.to_xywh(),
                 category_id=self.category.id,
                 category_name=self.category.name,
                 score=1,
@@ -609,7 +655,7 @@ class ObjectAnnotation:
             )
         else:
             shapely_annotation = ShapelyAnnotation.from_coco_bbox(
-                bbox=self.bbox.to_coco_bbox(),
+                bbox=self.bbox.to_xywh(),
             )
         return shapely_annotation
 
@@ -631,7 +677,7 @@ class ObjectAnnotation:
                 mask=imantics_mask, category=imantics_category
             )
         else:
-            imantics_bbox = imantics.BBox.create(self.bbox.to_voc_bbox())
+            imantics_bbox = imantics.BBox.create(self.bbox.to_xyxy())
             imantics_annotation = imantics.annotation.Annotation.from_bbox(
                 bbox=imantics_bbox, category=imantics_category
             )
@@ -650,7 +696,7 @@ class ObjectAnnotation:
     def get_shifted_object_annotation(self):
         if self.mask:
             return ObjectAnnotation(
-                bbox=self.bbox.get_shifted_box().to_voc_bbox(),
+                bbox=self.bbox.get_shifted_box().to_xyxy(),
                 category_id=self.category.id,
                 bool_mask=self.mask.get_shifted_mask().bool_mask,
                 category_name=self.category.name,
@@ -659,7 +705,7 @@ class ObjectAnnotation:
             )
         else:
             return ObjectAnnotation(
-                bbox=self.bbox.get_shifted_box().to_voc_bbox(),
+                bbox=self.bbox.get_shifted_box().to_xyxy(),
                 category_id=self.category.id,
                 bool_mask=None,
                 category_name=self.category.name,

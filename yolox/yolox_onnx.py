@@ -16,6 +16,7 @@ class YoloxONNX(object):
         nms_th=0.45,
         nms_score_th=0.1,
         with_p6=False,
+        device='cpu',
     ):
         # 入力サイズ
         self.input_shape = input_shape
@@ -27,10 +28,15 @@ class YoloxONNX(object):
 
         self.with_p6 = with_p6
 
+        if device == 'cpu':
+            providers = ['CUDAExecutionProvider', 'CPUExecutionProvider']
+        else:
+            providers = ['CPUExecutionProvider']
+
         # モデル読み込み
         self.onnx_session = onnxruntime.InferenceSession(
             model_path,
-            providers=['CUDAExecutionProvider', 'CPUExecutionProvider'],
+            providers=providers,
         )
 
         self.input_name = self.onnx_session.get_inputs()[0].name
